@@ -125,9 +125,9 @@ class Client:
             AWS_DEFAULT_REGION=region,
         ):
             source_client = boto3.client(
-                "s3",
+                "s3"
             )
-            obj = source_client.get_object(Bucket=bucket, Key=object)
+            obj = source_client.get_object(Bucket=bucket, Key=object).Body
 
         if not filename:
             filename = f"{_randstr()}.{pathlib.Path(object).suffix[1:]}"
