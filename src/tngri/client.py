@@ -1,6 +1,8 @@
 import io
+import os
 import pathlib
 import random
+from copy import deepcopy
 from dataclasses import dataclass
 from string import ascii_lowercase
 
@@ -12,6 +14,24 @@ from .config import Config
 
 def _randstr(length: int = 12):
     return "".join(random.choice(ascii_lowercase) for i in range(length))
+
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def environ(**env):
+    original_env = deepcopy(os.environ)
+
+    for key, value in env.items():
+        if value is None:
+            del os.environ[key]
+        else:
+            os.environ[key] = value
+    yield
+
+    os.environ = original_env
+
 
 
 @dataclass
@@ -99,15 +119,19 @@ class Client:
                 "bucket is required or object shall be in full form (i.e. s3://bucket/path/to/object)"
             )
 
-        source_client = boto3.client(
-            "s3",
-            endpoint_url=endpoint or None,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            region_name=region,
-        )
-
-        obj = source_client.get_object(Bucket=bucket, Key=object)
+        with environ(
+            AWS_ACCESS_KEY_ID=access_key,
+            AWS_SECRET_ACCESS_KEY=secret_key,
+            AWS_DEFAULT_REGION=region,
+        ):
+            source_client = boto3.client(
+                "s3",
+                endpoint_url=endpoint or None,
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                region_name=region,
+            )
+            obj = source_client.get_object(Bucket=bucket, Key=object)
 
         if not filename:
             filename = f"{_randstr()}.{pathlib.Path(object).suffix[1:]}"
