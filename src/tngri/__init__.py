@@ -47,10 +47,11 @@ def upload_s3(
     object: str,
     access_key: str,
     secret_key: str,
-    bucket: str,
-    endpoint: str,
-    region: str,
     *,
+    bucket: str | None = None,
+    endpoint: str | None = None,
+    region: str | None = None,
+    filename: str | None = None,
     client: Client | None = None,
 ):
 
@@ -58,7 +59,7 @@ def upload_s3(
     if _c is None:
         raise ValueError("No client provided")
 
-    return _c.upload_s3(object, access_key, secret_key, bucket, endpoint, region)
+    return _c.upload_s3(object, access_key, secret_key, bucket=bucket, endpoint=endpoint, region=region, filename=filename)
 
 
 def update():
