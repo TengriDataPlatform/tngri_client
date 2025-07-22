@@ -138,7 +138,7 @@ class Client:
             region_name=self._config.s3_region,
         )
         s3_client.upload_fileobj(
-            Body=obj, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}"
+            obj, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}"
         )
 
         return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
