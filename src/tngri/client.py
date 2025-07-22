@@ -33,7 +33,6 @@ def environ(**env):
     os.environ = original_env
 
 
-
 @dataclass
 class UploadedFile:
     s3_path: str
@@ -120,16 +119,13 @@ class Client:
             )
 
         with environ(
+            AWS_ENDPOINT_URL=endpoint or None,
             AWS_ACCESS_KEY_ID=access_key,
             AWS_SECRET_ACCESS_KEY=secret_key,
             AWS_DEFAULT_REGION=region,
         ):
             source_client = boto3.client(
                 "s3",
-                endpoint_url=endpoint or None,
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                region_name=region,
             )
             obj = source_client.get_object(Bucket=bucket, Key=object)
 
