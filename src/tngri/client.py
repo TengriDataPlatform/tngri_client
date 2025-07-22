@@ -7,7 +7,7 @@ from string import ascii_lowercase
 import boto3
 import polars
 
-from src.tngri.config import Config
+from .config import Config
 
 
 def _randstr(length: int = 12):
