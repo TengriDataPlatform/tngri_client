@@ -1,22 +1,22 @@
 [project]
-name = "tngri_client"
+name = "tngri"
 version = "0.1.0"
 description = "Client for TNGRi distributed analytical platform"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-
+    "polars>=1.31.0",
 ]
 
 [project.scripts]
-prostore = "tngri_client.main:cli"
+tngri-client = "tngri.main:cli"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/tngri_client"]
+packages = ["src/tngri"]
 
 [tool.ruff]
 line-length = 99
@@ -87,3 +87,8 @@ follow_untyped_imports = true
 
 [tool.pytest.ini_options]
 addopts = "--disable-warnings"
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+]
