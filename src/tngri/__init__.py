@@ -42,3 +42,6 @@ def upload_df(
     return _c.upload_df(df, filename)
 
 
+def update():
+    import os
+    os.system("pip install --upgrade git+ssh://git@github.com/naorlov/tngri_client.git")
