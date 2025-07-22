@@ -2,7 +2,7 @@ import pathlib
 
 from .client import Client
 
-__all__ = ["Client", "upload_df", "upload_file"]
+__all__ = ["Client", "upload_df", "upload_file", "upload_s3"]
 
 
 _DEFAULT_CLIENT = None
