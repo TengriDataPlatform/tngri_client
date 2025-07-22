@@ -137,7 +137,7 @@ class Client:
             aws_secret_access_key=self._config.s3_secret_access_key,
             region_name=self._config.s3_region,
         )
-        s3_client.put_object(
+        s3_client.upload_fileobj(
             Body=obj, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}"
         )
 
