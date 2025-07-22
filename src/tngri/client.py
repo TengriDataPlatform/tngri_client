@@ -18,6 +18,8 @@ def _randstr(length: int = 12):
 class UploadedFile:
     s3_path: str
 
+    _client: "Client" = None
+
     def __str__(self):
         return pathlib.Path(self.s3_path).name
 
@@ -49,7 +51,9 @@ class Client:
         suffix = filepath.suffix
         filename = f"{filename}{suffix}"
 
-        s3_client.upload_file(filepath, self._config.s3_bucket_name, f"Stage/{filename}")
+        s3_client.upload_file(
+            filepath, self._config.s3_bucket_name, f"Stage/{filename}"
+        )
 
         return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
 
@@ -74,4 +78,49 @@ class Client:
             Body=parquet, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}"
         )
 
-        return filename
+        return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
+
+    def upload_s3(
+        self,
+        object: str,
+        access_key: str,
+        secret_key: str,
+        *,
+        bucket: str | None = None,
+        endpoint: str | None = None,
+        region: str | None = None,
+        filename: str | None = None,
+    ):
+        if object.startswith("s3://"):
+            bucket, object = object.replace("s3://", "").split("/", 1)
+
+        if not bucket:
+            raise ValueError(
+                "bucket is required or object shall be in full form (i.e. s3://bucket/path/to/object)"
+            )
+
+        source_client = boto3.client(
+            "s3",
+            endpoint_url=endpoint or None,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name=region,
+        )
+
+        obj = source_client.get_object(Bucket=bucket, Key=object)
+
+        if not filename:
+            filename = f"{_randstr()}.{pathlib.Path(object).suffix[1:]}"
+
+        s3_client = boto3.client(
+            "s3",
+            endpoint_url=self._config.s3_endpoint_url,
+            aws_access_key_id=self._config.s3_access_key_id,
+            aws_secret_access_key=self._config.s3_secret_access_key,
+            region_name=self._config.s3_region,
+        )
+        s3_client.put_object(
+            Body=obj, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}"
+        )
+
+        return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")

@@ -42,6 +42,26 @@ def upload_df(
     return _c.upload_df(df, filename)
 
 
+def upload_s3(
+    self,
+    object: str,
+    access_key: str,
+    secret_key: str,
+    bucket: str,
+    endpoint: str,
+    region: str,
+    *,
+    client: Client | None = None,
+):
+
+    _c = client or _default_client()
+    if _c is None:
+        raise ValueError("No client provided")
+
+    return _c.upload_s3(object, access_key, secret_key, bucket, endpoint, region)
+
+
 def update():
     import os
+
     os.system("pip install --upgrade git+ssh://git@github.com/naorlov/tngri_client.git")

@@ -77,8 +77,12 @@ class BaseConfig:
 
 @dataclasses.dataclass
 class S3Config(BaseConfig):
-    s3_region: str = dataclasses.field(default="eu-central-1", metadata=dict(additional_env="AWS_DEFAULT_REGION"))
-    s3_default_region: str = dataclasses.field(default="eu-central-1", metadata=dict(additional_env="AWS_DEFAULT_REGION"))
+    s3_region: str = dataclasses.field(
+        default="eu-central-1", metadata=dict(additional_env="AWS_DEFAULT_REGION")
+    )
+    s3_default_region: str = dataclasses.field(
+        default="eu-central-1", metadata=dict(additional_env="AWS_DEFAULT_REGION")
+    )
     s3_access_key_id: str = dataclasses.field(default=None, metadata=dict(additional_env="AWS_ACCESS_KEY_ID"))  # type: ignore
     s3_secret_access_key: str = dataclasses.field(default=None, metadata=dict(additional_env="AWS_SECRET_ACCESS_KEY"))  # type: ignore
     s3_endpoint_url: str = dataclasses.field(default=None, metadata=dict(additional_env="AWS_ENDPOINT_URL"))  # type: ignore
