@@ -43,7 +43,6 @@ def upload_df(
 
 
 def upload_s3(
-    self,
     object: str,
     access_key: str,
     secret_key: str,
