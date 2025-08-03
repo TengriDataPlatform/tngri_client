@@ -165,6 +165,9 @@ class Client:
                     continue
                 case "query_finished":
                     ws.close()
-                    return polars.DataFrame(msg["result"][1])
+                    try:
+                        return polars.DataFrame(msg["result"][1])
+                    except Exception as e:
+                        raise RuntimeError(f"Error while executing: {msg}") from e
                 case _:
                     raise RuntimeError(f"Error while executing: {msg}")
