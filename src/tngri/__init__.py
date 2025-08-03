@@ -79,5 +79,4 @@ def sql(sql: str, *, client: Client | None = None):
 
 def update():
     import os
-
-    os.system("pip install --upgrade git+ssh://git@github.com/naorlov/tngri_client.git")
+    os.system("PATH=/usr/bin:$PATH pip install --upgrade git+ssh://git@github.com/naorlov/tngri_client.git")
