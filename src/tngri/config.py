@@ -15,6 +15,8 @@ def click_arguments(cls):
         for field in dataclasses.fields(cls)[::-1]:
             field_type = field.type
             field_name = field.name
+            field_meta = field.metadata
+
             required = False
             if isinstance(field_type, types.UnionType):
                 field_type = field_type.__args__[0]
@@ -28,7 +30,7 @@ def click_arguments(cls):
                 is_flag=is_flag,
                 type=field_type,
                 default=field.default,
-                envvar="TNGRI_" + field_name.upper(),
+                envvar=field_meta.get("env") or "TNGRI_" + field_name.upper(),
                 required=required,
                 show_envvar=True,
             )(f)
@@ -69,6 +71,7 @@ class BaseConfig:
         try:
             ctx: click.Context = arguments(standalone_mode=False)
         except click.exceptions.MissingParameter as e:
+            arguments("--help")
             raise ValueError(f"{e.param} is missing") from e
             exit(1)
 
@@ -90,5 +93,12 @@ class S3Config(BaseConfig):
 
 
 @dataclasses.dataclass
-class Config(S3Config):
+class WSConfig(BaseConfig):
+    ws_host: str = dataclasses.field(default="localhost")
+    ws_port: int = 3001
+    ws_token: str | None = dataclasses.field(default=None, metadata=dict(env="TNGRI_ACCESS_TOKEN"))  # type: ignore
+
+
+@dataclasses.dataclass
+class Config(S3Config, WSConfig):
     pass

@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import pathlib
 import random
@@ -118,6 +119,10 @@ class Client:
                 "bucket is required or object shall be in full form (i.e. s3://bucket/path/to/object)"
             )
 
+        # if "*" in object:
+        #     prefix = object.partition("*")[0]
+        #     objects =
+
         with environ(
             AWS_ENDPOINT_URL=endpoint or None,
             AWS_ACCESS_KEY_ID=access_key,
@@ -142,3 +147,24 @@ class Client:
         )
 
         return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
+
+    def sql(self, sql: str):
+        from websocket import create_connection
+
+        ws = create_connection(f"ws://{self._config.ws_host}:{self._config.ws_port}/")
+        ws.send(json.dumps({"_type": "auth", "token": self._config.ws_token}))
+        ws.recv()
+        ws.send(json.dumps({"_type": "query", "query": sql, "id": "1"}))
+
+        while msg := ws.recv():
+            msg = json.loads(msg)
+            match msg["_type"]:
+                case "connection_info":
+                    continue
+                case "execute_statement":
+                    continue
+                case "query_finished":
+                    ws.close()
+                    return polars.DataFrame(msg["result"][1])
+                case _:
+                    raise RuntimeError(f"Error while executing: {msg}")

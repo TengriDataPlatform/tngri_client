@@ -12,6 +12,15 @@ def _default_client() -> Client | None:
     return _DEFAULT_CLIENT or Client.from_env()
 
 
+def _client_or_raise(c: Client | None = None) -> Client:
+    _c = c or _default_client()
+    if not _c:
+        raise ValueError(
+            "No default client is set to tngri module. Use tngri.set_default_client() or set proper environment variables"
+        )
+    return _c
+
+
 def set_default_client(c: Client | None = None):
     _DEFAULT_CLIENT = c
 
@@ -22,9 +31,7 @@ def upload_file(
     *,
     client: Client | None = None,
 ):
-    _c = client or _default_client()
-    if _c is None:
-        raise ValueError("No client provided")
+    _c = _client_or_raise(client)
 
     return _c.upload_file(file, filename)
 
@@ -35,9 +42,7 @@ def upload_df(
     *,
     client: Client | None = None,
 ):
-    _c = client or _default_client()
-    if _c is None:
-        raise ValueError("No client provided")
+    _c = _client_or_raise(client)
 
     return _c.upload_df(df, filename)
 
@@ -54,9 +59,7 @@ def upload_s3(
     client: Client | None = None,
 ):
 
-    _c = client or _default_client()
-    if _c is None:
-        raise ValueError("No client provided")
+    _c = _client_or_raise(client)
 
     return _c.upload_s3(
         object,
@@ -67,6 +70,11 @@ def upload_s3(
         region=region,
         filename=filename,
     )
+
+
+def sql(sql: str, *, client: Client | None = None):
+    _c = _client_or_raise(client)
+    return _c.sql(sql)
 
 
 def update():
