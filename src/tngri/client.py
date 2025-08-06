@@ -159,15 +159,13 @@ class Client:
         while msg := ws.recv():
             msg = json.loads(msg)
             match msg["_type"]:
-                case "connection_info":
-                    continue
-                case "execute_statement":
+                case "connection_info" | "worker_scheduling" | "execute_statement":
                     continue
                 case "query_finished":
                     ws.close()
                     try:
                         return polars.DataFrame(msg["result"][1])
                     except Exception as e:
-                        raise RuntimeError(f"Error while executing: {msg}") from e
+                        raise RuntimeError(f"Error while executing: {msg[:1000]} {e}") from e
                 case _:
                     raise RuntimeError(f"Error while executing: {msg}")
