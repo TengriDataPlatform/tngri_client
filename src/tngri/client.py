@@ -166,6 +166,6 @@ class Client:
                     try:
                         return polars.DataFrame(msg["result"][1])
                     except Exception as e:
-                        raise RuntimeError(f"Error while executing: {msg[:1000]} {e}") from e
+                        raise RuntimeError(f"Error while executing: {msg} {e}") from e
                 case _:
                     raise RuntimeError(f"Error while executing: {msg}")
