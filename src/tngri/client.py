@@ -159,7 +159,7 @@ class Client:
         while msg := ws.recv():
             msg = json.loads(msg)
             match msg["_type"]:
-                case "connection_info" | "worker_scheduling" | "execute_statement" | "running":
+                case "connection_info" | "worker_scheduling" | "execute_statement" | "running" | "host_metrics":
                     continue
                 case "query_finished":
                     ws.close()
