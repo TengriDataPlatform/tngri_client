@@ -94,8 +94,7 @@ class S3Config(BaseConfig):
 
 @dataclasses.dataclass
 class WSConfig(BaseConfig):
-    ws_host: str = dataclasses.field(default="localhost")
-    ws_port: int = 3001
+    ws_addr: str = dataclasses.field(default="ws://localhost:3001")
     ws_token: str | None = dataclasses.field(default=None, metadata=dict(env="TNGRI_ACCESS_TOKEN"))  # type: ignore
 
 

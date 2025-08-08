@@ -151,7 +151,7 @@ class Client:
     def sql(self, sql: str):
         from websocket import create_connection
 
-        ws = create_connection(f"ws://{self._config.ws_host}:{self._config.ws_port}/")
+        ws = create_connection(self._config.ws_addr)
         ws.send(json.dumps({"_type": "auth", "token": self._config.ws_token}))
         ws.recv()
         ws.send(json.dumps({"_type": "query", "query": sql, "id": "1"}))
@@ -159,7 +159,7 @@ class Client:
         while msg := ws.recv():
             msg = json.loads(msg)
             match msg["_type"]:
-                case "connection_info" | "worker_scheduling" | "execute_statement":
+                case "connection_info" | "worker_scheduling" | "execute_statement" | "running":
                     continue
                 case "query_finished":
                     ws.close()
