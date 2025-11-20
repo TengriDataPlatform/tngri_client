@@ -10,6 +10,7 @@ from string import ascii_lowercase
 from typing import Generator
 
 import boto3
+import botocore.config
 import polars
 
 from .config import Config
@@ -62,12 +63,14 @@ class Client:
         if not filename:
             filename = _randstr()
 
+        client_config = botocore.config.Config(request_checksum_calculation="WHEN_REQUIRED")  # type: ignore
         s3_client = boto3.client(
             "s3",
             endpoint_url=self._config.s3_endpoint_url,
             aws_access_key_id=self._config.s3_access_key_id,
             aws_secret_access_key=self._config.s3_secret_access_key,
             region_name=self._config.s3_region,
+            config=client_config,
         )
 
         suffix = filepath.suffix
@@ -86,12 +89,14 @@ class Client:
         if not filename:
             filename = f"{_randstr()}.parquet"
 
+        client_config = botocore.config.Config(request_checksum_calculation="WHEN_REQUIRED")  # type: ignore
         s3_client = boto3.client(
             "s3",
             endpoint_url=self._config.s3_endpoint_url,
             aws_access_key_id=self._config.s3_access_key_id,
             aws_secret_access_key=self._config.s3_secret_access_key,
             region_name=self._config.s3_region,
+            config=client_config,
         )
         buffer = io.BytesIO()
         df.write_parquet(buffer)
@@ -137,12 +142,14 @@ class Client:
         if not filename:
             filename = f"{_randstr()}.{pathlib.Path(object).suffix[1:]}"
 
+        client_config = botocore.config.Config(request_checksum_calculation="WHEN_REQUIRED")  # type: ignore
         s3_client = boto3.client(
             "s3",
             endpoint_url=self._config.s3_endpoint_url,
             aws_access_key_id=self._config.s3_access_key_id,
             aws_secret_access_key=self._config.s3_secret_access_key,
             region_name=self._config.s3_region,
+            config=client_config,
         )
         s3_client.upload_fileobj(
             obj, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}"
