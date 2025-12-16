@@ -47,6 +47,17 @@ class UploadedFile:
         return pathlib.Path(self.s3_path).name
 
 
+@dataclass
+class RunStatus:
+    ok: bool
+    output: str
+    errors: str
+
+
+def join_lines(lines: list[str]) -> str:
+    return '\n'.join(map(str.rstrip, lines))
+
+
 class Client:
     def __init__(self, config: Config | None = None):
         self._config = config
@@ -198,10 +209,11 @@ class Client:
                 elif msg["_type"] == "query_finished" and msg.get("result"):
                     return self._rows_to_df(msg["result"])
 
-    def run_notebook(self, notebook_id: str, env_name: str | None = None):
+    def run_notebook(self, notebook_id: str, env_name: str | None = None) -> RunStatus:
         with self._socket() as ws:
             req_id = str(uuid.uuid4())
-            output = []
+            output: list[str] = []
+            errors: list[str] = []
             ws.send(json.dumps({"_type": "notebook", "notebook_id": notebook_id, "env_name": env_name, "id": req_id}))
 
             while msg := ws.recv():
@@ -209,16 +221,18 @@ class Client:
                 if msg.get("id") != req_id:
                     continue
                 elif msg["_type"] == "notebook_finished" and msg.get("error"):
-                    raise RuntimeError(f"Error while executing: {msg["error"]}")
+                    errors.append(msg["error"])
+                    return RunStatus(False, join_lines(output), join_lines(errors))
                 elif msg["_type"] == "notebook_finished" and msg.get("result"):
-                    return '\n'.join([*map(str.rstrip, output), msg["result"]])
+                    output.append(msg["result"])
+                    return RunStatus(True, join_lines(output), join_lines(errors))
 
                 if error := msg.get("error"):
-                    output.append(error)
+                    errors.append(error)
 
                 res = msg.get("result")
                 if isinstance(res, dict) and res.get("output_type") == "error":
-                    output.append(': '.join(filter(None, [res.get("ename"), res.get("evalue")])))
+                    errors.append(': '.join(filter(None, [res.get("ename"), res.get("evalue")])))
                 elif isinstance(res, dict) and res.get("output_type") == "stream":
                     text = res.get('text')
                     output.append(''.join(text) if isinstance(text, list) else text)
