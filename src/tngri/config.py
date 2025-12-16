@@ -100,4 +100,4 @@ class WSConfig(BaseConfig):
 
 @dataclasses.dataclass
 class Config(S3Config, WSConfig):
-    pass
+    default_parent_job_id: str | None = dataclasses.field(default=None, metadata=dict(env="TNGRI_PARENT_JOB_ID"))  # type: ignore

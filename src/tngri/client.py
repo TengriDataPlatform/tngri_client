@@ -209,12 +209,21 @@ class Client:
                 elif msg["_type"] == "query_finished" and msg.get("result"):
                     return self._rows_to_df(msg["result"])
 
-    def run_notebook(self, notebook_id: str, env_name: str | None = None) -> RunStatus:
+    def run_notebook(self, notebook_id: str, env_name: str | None = None, parent_job_id: str | None = None) -> RunStatus:
+        if not parent_job_id:
+            parent_job_id = self._config.default_parent_job_id
+
         with self._socket() as ws:
             req_id = str(uuid.uuid4())
             output: list[str] = []
             errors: list[str] = []
-            ws.send(json.dumps({"_type": "notebook", "notebook_id": notebook_id, "env_name": env_name, "id": req_id}))
+            ws.send(json.dumps({
+                "_type": "notebook",
+                "notebook_id": notebook_id,
+                "env_name": env_name,
+                "id": req_id,
+                "job_id": parent_job_id
+            }))
 
             while msg := ws.recv():
                 msg = json.loads(msg)
