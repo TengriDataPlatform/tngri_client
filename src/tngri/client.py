@@ -171,7 +171,7 @@ class Client:
     @staticmethod
     def _rows_to_df(rows):
         try:
-            return polars.DataFrame(rows[1:], orient='row', schema=[c for (c, t) in rows[0]])
+            return polars.DataFrame(rows[1:], orient='row', schema=[c for (c, t) in rows[0]], infer_schema_length=None)
         except Exception as e:
             raise RuntimeError(f"Error while executing: {e}") from e
 
