@@ -86,18 +86,28 @@ class S3Config(BaseConfig):
     s3_default_region: str = dataclasses.field(
         default="eu-central-1", metadata=dict(additional_env="AWS_DEFAULT_REGION")
     )
-    s3_access_key_id: str = dataclasses.field(default=None, metadata=dict(additional_env="AWS_ACCESS_KEY_ID"))  # type: ignore
-    s3_secret_access_key: str = dataclasses.field(default=None, metadata=dict(additional_env="AWS_SECRET_ACCESS_KEY"))  # type: ignore
-    s3_endpoint_url: str = dataclasses.field(default=None, metadata=dict(additional_env="AWS_ENDPOINT_URL"))  # type: ignore
+    s3_access_key_id: str = dataclasses.field(
+        default=None, metadata=dict(additional_env="AWS_ACCESS_KEY_ID")
+    )  # type: ignore
+    s3_secret_access_key: str = dataclasses.field(
+        default=None, metadata=dict(additional_env="AWS_SECRET_ACCESS_KEY")
+    )  # type: ignore
+    s3_endpoint_url: str = dataclasses.field(
+        default=None, metadata=dict(additional_env="AWS_ENDPOINT_URL")
+    )  # type: ignore
     s3_bucket_name: str = None  # type: ignore
 
 
 @dataclasses.dataclass
 class WSConfig(BaseConfig):
-    ws_addr: str = dataclasses.field(default="ws://localhost:3001", metadata=dict(env="TNGRI_SITE_WS_ADDR"))
+    ws_addr: str = dataclasses.field(
+        default="ws://localhost:3001", metadata=dict(env="TNGRI_SITE_WS_ADDR")
+    )
     ws_token: str | None = dataclasses.field(default=None, metadata=dict(env="TNGRI_ACCESS_TOKEN"))  # type: ignore
 
 
 @dataclasses.dataclass
 class Config(S3Config, WSConfig):
-    default_parent_job_id: str | None = dataclasses.field(default=None, metadata=dict(env="TNGRI_PARENT_JOB_ID"))  # type: ignore
+    default_parent_job_id: str | None = dataclasses.field(
+        default=None, metadata=dict(env="TNGRI_PARENT_JOB_ID")
+    )  # type: ignore

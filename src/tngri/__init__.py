@@ -1,9 +1,11 @@
 import pathlib
 
+import pandas as pd
+import polars
+
 from .client import Client
 
 __all__ = ["Client", "upload_df", "upload_file", "upload_s3"]
-
 
 _DEFAULT_CLIENT = None
 
@@ -58,7 +60,6 @@ def upload_s3(
     filename: str | None = None,
     client: Client | None = None,
 ):
-
     _c = _client_or_raise(client)
 
     return _c.upload_s3(
@@ -82,6 +83,16 @@ def run_notebook(notebook_id: str, env_name: str | None = None, client: Client |
     return _c.run_notebook(notebook_id, env_name)
 
 
+def create_table(
+    data: pd.DataFrame | polars.DataFrame, table_name: str, schema: str | None = None
+):
+    _c = _client_or_raise()
+    return _c.create_table(data, table_name, schema=schema)
+
+
 def update():
     import os
-    os.system("PATH=/usr/bin:$PATH pip install --upgrade --force-reinstall git+https://github.com/TengriDataPlatform/tngri_client.git")
+
+    os.system(
+        "PATH=/usr/bin:$PATH pip install --upgrade --force-reinstall git+https://github.com/TengriDataPlatform/tngri_client.git"
+    )

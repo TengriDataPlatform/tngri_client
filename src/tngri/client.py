@@ -11,6 +11,7 @@ from typing import Generator
 
 import boto3
 import botocore.config
+import pandas as pd
 import polars
 
 from .config import Config
@@ -55,7 +56,7 @@ class RunStatus:
 
 
 def join_lines(lines: list[str]) -> str:
-    return '\n'.join(map(str.rstrip, lines))
+    return "\n".join(map(str.rstrip, lines))
 
 
 class Client:
@@ -87,9 +88,7 @@ class Client:
         suffix = filepath.suffix
         filename = f"{filename}{suffix}"
 
-        s3_client.upload_file(
-            filepath, self._config.s3_bucket_name, f"Stage/{filename}"
-        )
+        s3_client.upload_file(filepath, self._config.s3_bucket_name, f"Stage/{filename}")
 
         return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
 
@@ -162,16 +161,16 @@ class Client:
             region_name=self._config.s3_region,
             config=client_config,
         )
-        s3_client.upload_fileobj(
-            obj, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}"
-        )
+        s3_client.upload_fileobj(obj, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}")
 
         return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
 
     @staticmethod
     def _rows_to_df(rows):
         try:
-            return polars.DataFrame(rows[1:], orient='row', schema=[c for (c, t) in rows[0]], infer_schema_length=None)
+            return polars.DataFrame(
+                rows[1:], orient="row", schema=[c for (c, t) in rows[0]], infer_schema_length=None
+            )
         except Exception as e:
             raise RuntimeError(f"Error while executing: {e}") from e
 
@@ -205,11 +204,13 @@ class Client:
                 if msg.get("id") != req_id:
                     continue
                 elif msg["_type"] == "query_finished" and msg.get("error"):
-                    raise RuntimeError(f"Error while executing: {msg["error"]}")
+                    raise RuntimeError(f"Error while executing: {msg['error']}")
                 elif msg["_type"] == "query_finished" and msg.get("result"):
                     return self._rows_to_df(msg["result"])
 
-    def run_notebook(self, notebook_id: str, env_name: str | None = None, parent_job_id: str | None = None) -> RunStatus:
+    def run_notebook(
+        self, notebook_id: str, env_name: str | None = None, parent_job_id: str | None = None
+    ) -> RunStatus:
         if not parent_job_id:
             parent_job_id = self._config.default_parent_job_id
 
@@ -217,13 +218,17 @@ class Client:
             req_id = str(uuid.uuid4())
             output: list[str] = []
             errors: list[str] = []
-            ws.send(json.dumps({
-                "_type": "notebook",
-                "notebook_id": notebook_id,
-                "env_name": env_name,
-                "id": req_id,
-                "job_id": parent_job_id
-            }))
+            ws.send(
+                json.dumps(
+                    {
+                        "_type": "notebook",
+                        "notebook_id": notebook_id,
+                        "env_name": env_name,
+                        "id": req_id,
+                        "job_id": parent_job_id,
+                    }
+                )
+            )
 
             while msg := ws.recv():
                 msg = json.loads(msg)
@@ -241,7 +246,17 @@ class Client:
 
                 res = msg.get("result")
                 if isinstance(res, dict) and res.get("output_type") == "error":
-                    errors.append(': '.join(filter(None, [res.get("ename"), res.get("evalue")])))
+                    errors.append(": ".join(filter(None, [res.get("ename"), res.get("evalue")])))
                 elif isinstance(res, dict) and res.get("output_type") == "stream":
-                    text = res.get('text')
-                    output.append(''.join(text) if isinstance(text, list) else text)
+                    text = res.get("text")
+                    output.append("".join(text) if isinstance(text, list) else text)
+
+    def create_table(
+        self,
+        data: pd.DataFrame | polars.DataFrame,
+        table_name: str,
+        schema: str | None = None,
+    ):
+        data = pd.DataFrame(data)
+        file = self.upload_df(data)
+        self.sql(f"CREATE TABLE {table_name} AS SELECT * FROM read_parquet('{file.s3_path}')")
