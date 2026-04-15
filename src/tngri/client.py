@@ -180,13 +180,19 @@ class Client:
     def delete_file(self, file: str | StagedFile | UploadedFile):
         s3_client = self._s3_client()
 
+        def normalize_stage_path(path: str):
+            path = path.removeprefix(f"s3://{self._config.s3_bucket_name}/")
+            return path if path.startswith("Stage/") else f"Stage/{path}"
+
         if isinstance(file, StagedFile):
-            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=file.path)
+            path = normalize_stage_path(file.path)
+            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=path)
         elif isinstance(file, UploadedFile):
-            path = file.s3_path.removeprefix(f"s3://{self._config.s3_bucket_name}/Stage/")
+            path = normalize_stage_path(file.s3_path)
             s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=path)
         else:
-            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=file)
+            path = normalize_stage_path(file)
+            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=path)
 
     @staticmethod
     def _rows_to_df(rows):
