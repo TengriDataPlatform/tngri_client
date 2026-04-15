@@ -53,6 +53,9 @@ class StagedFile:
     size: int
     modified: datetime.datetime
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}({' '.join([f'{k}={v}' for k, v in self.__dict__.items()])})"
+
 
 @dataclass
 class RunStatus:
@@ -166,9 +169,12 @@ class Client:
         paginator = s3_client.get_paginator("list_objects_v2")
         pages = paginator.paginate(Bucket=self._config.s3_bucket_name, Prefix=f"Stage/{filepath}")
         return [
-            StagedFile(obj["Key"], obj.get("Size", 0), obj.get("LastModified"))
+            StagedFile(
+                obj["Key"].removeprefix("Stage/"), obj.get("Size", 0), obj.get("LastModified")
+            )
             for page in pages
             for obj in page.get("Contents", [])
+            if obj.get("Size", 1) > 0
         ]
 
     def delete_file(self, file: str | StagedFile | UploadedFile):
@@ -177,7 +183,7 @@ class Client:
         if isinstance(file, StagedFile):
             s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=file.path)
         elif isinstance(file, UploadedFile):
-            path = file.s3_path.replace(f"s3://{self._config.s3_bucket_name}/Stage/", "")
+            path = file.s3_path.removeprefix(f"s3://{self._config.s3_bucket_name}/Stage/")
             s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=path)
         else:
             s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=file)
