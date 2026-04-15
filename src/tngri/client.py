@@ -93,12 +93,9 @@ class Client:
             raise ValueError(f"File {filepath} does not exist")
 
         if not filename:
-            filename = _randstr()
+            filename = f"{_randstr()}{filepath.suffix}"
 
         s3_client = self._s3_client()
-
-        suffix = filepath.suffix
-        filename = f"{filename}{suffix}"
 
         s3_client.upload_file(filepath, self._config.s3_bucket_name, f"Stage/{filename}")
 
