@@ -1,13 +1,15 @@
+import datetime
 import io
 import json
 import os
 import pathlib
 import random
 import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from string import ascii_lowercase
-from typing import Generator
 
 import boto3
 import botocore.config
@@ -19,9 +21,6 @@ from .config import Config
 
 def _randstr(length: int = 12):
     return "".join(random.choice(ascii_lowercase) for i in range(length))
-
-
-from contextlib import contextmanager
 
 
 @contextmanager
@@ -49,6 +48,13 @@ class UploadedFile:
 
 
 @dataclass
+class StagedFile:
+    path: str
+    size: int
+    modified: datetime.datetime
+
+
+@dataclass
 class RunStatus:
     ok: bool
     output: str
@@ -67,6 +73,17 @@ class Client:
     def from_env(cls):
         return cls(Config.from_env())
 
+    def _s3_client(self):
+        client_config = botocore.config.Config(request_checksum_calculation="WHEN_REQUIRED")  # type: ignore
+        return boto3.client(
+            "s3",
+            endpoint_url=self._config.s3_endpoint_url,
+            aws_access_key_id=self._config.s3_access_key_id,
+            aws_secret_access_key=self._config.s3_secret_access_key,
+            region_name=self._config.s3_region,
+            config=client_config,
+        )
+
     def upload_file(self, filepath: str, filename: str | None = None) -> UploadedFile:
         filepath = pathlib.Path(filepath)
         if not filepath.exists():
@@ -75,15 +92,7 @@ class Client:
         if not filename:
             filename = _randstr()
 
-        client_config = botocore.config.Config(request_checksum_calculation="WHEN_REQUIRED")  # type: ignore
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=self._config.s3_endpoint_url,
-            aws_access_key_id=self._config.s3_access_key_id,
-            aws_secret_access_key=self._config.s3_secret_access_key,
-            region_name=self._config.s3_region,
-            config=client_config,
-        )
+        s3_client = self._s3_client()
 
         suffix = filepath.suffix
         filename = f"{filename}{suffix}"
@@ -99,18 +108,12 @@ class Client:
         if not filename:
             filename = f"{_randstr()}.parquet"
 
-        client_config = botocore.config.Config(request_checksum_calculation="WHEN_REQUIRED")  # type: ignore
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=self._config.s3_endpoint_url,
-            aws_access_key_id=self._config.s3_access_key_id,
-            aws_secret_access_key=self._config.s3_secret_access_key,
-            region_name=self._config.s3_region,
-            config=client_config,
-        )
+        s3_client = self._s3_client()
+
         buffer = io.BytesIO()
         df.write_parquet(buffer)
         parquet = buffer.getvalue()
+
         s3_client.put_object(
             Body=parquet, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}"
         )
@@ -152,25 +155,39 @@ class Client:
         if not filename:
             filename = f"{_randstr()}.{pathlib.Path(object).suffix[1:]}"
 
-        client_config = botocore.config.Config(request_checksum_calculation="WHEN_REQUIRED")  # type: ignore
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=self._config.s3_endpoint_url,
-            aws_access_key_id=self._config.s3_access_key_id,
-            aws_secret_access_key=self._config.s3_secret_access_key,
-            region_name=self._config.s3_region,
-            config=client_config,
-        )
+        s3_client = self._s3_client()
         s3_client.upload_fileobj(obj, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}")
 
         return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
+
+    def list_files(self, filepath: str = "") -> list[StagedFile]:
+        s3_client = self._s3_client()
+
+        paginator = s3_client.get_paginator("list_objects_v2")
+        pages = paginator.paginate(Bucket=self._config.s3_bucket_name, Prefix=f"Stage/{filepath}")
+        return [
+            StagedFile(obj["Key"], obj.get("Size", 0), obj.get("LastModified"))
+            for page in pages
+            for obj in page.get("Contents", [])
+        ]
+
+    def delete_file(self, file: str | StagedFile | UploadedFile):
+        s3_client = self._s3_client()
+
+        if isinstance(file, StagedFile):
+            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=file.path)
+        elif isinstance(file, UploadedFile):
+            path = file.s3_path.replace(f"s3://{self._config.s3_bucket_name}/Stage/", "")
+            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=path)
+        else:
+            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=file)
 
     @staticmethod
     def _rows_to_df(rows):
         try:
             return polars.DataFrame(
                 rows[1:], orient="row", schema=[c for (c, t) in rows[0]], infer_schema_length=None
-            )
+            ).to_pandas()
         except Exception as e:
             raise RuntimeError(f"Error while executing: {e}") from e
 
@@ -255,8 +272,11 @@ class Client:
         self,
         data: pd.DataFrame | polars.DataFrame,
         table_name: str,
-        schema: str | None = None,
+        replace: bool = False,
     ):
         data = pd.DataFrame(data)
         file = self.upload_df(data)
-        self.sql(f"CREATE TABLE {table_name} AS SELECT * FROM read_parquet('{file.s3_path}')")
+        self.sql(f"""
+            CREATE {"OR REPLACE" if replace else ""} TABLE {table_name}
+            AS SELECT * FROM read_parquet('{file.s3_path}')
+        """)
