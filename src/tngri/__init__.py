@@ -3,7 +3,7 @@ import pathlib
 import pandas as pd
 import polars
 
-from .client import Client
+from .client import Client, StagedFile, UploadedFile
 
 __all__ = ["Client", "upload_df", "upload_file", "upload_s3"]
 
@@ -73,6 +73,26 @@ def upload_s3(
     )
 
 
+def list_files(
+    filepath: str = "",
+    *,
+    client: Client | None = None,
+):
+    _c = _client_or_raise(client)
+
+    return _c.list_files(filepath)
+
+
+def delete_file(
+    file: str | StagedFile | UploadedFile,
+    *,
+    client: Client | None = None,
+):
+    _c = _client_or_raise(client)
+
+    _c.delete_file(file)
+
+
 def sql(sql: str, *, client: Client | None = None):
     _c = _client_or_raise(client)
     return _c.sql(sql)
@@ -83,16 +103,14 @@ def run_notebook(notebook_id: str, env_name: str | None = None, client: Client |
     return _c.run_notebook(notebook_id, env_name)
 
 
-def create_table(
-    data: pd.DataFrame | polars.DataFrame, table_name: str, schema: str | None = None
-):
+def create_table(data: pd.DataFrame | polars.DataFrame, table_name: str, replace: bool = False):
     _c = _client_or_raise()
-    return _c.create_table(data, table_name, schema=schema)
+    return _c.create_table(data, table_name, replace=replace)
 
 
 def update():
     import os
 
     os.system(
-        "PATH=/usr/bin:$PATH pip install --upgrade --force-reinstall git+https://github.com/TengriDataPlatform/tngri_client.git"
+        "PATH=/usr/bin:$PATH python -m pip install --upgrade --force-reinstall git+https://github.com/TengriDataPlatform/tngri_client.git"
     )
