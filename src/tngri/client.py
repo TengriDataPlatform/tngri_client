@@ -44,7 +44,7 @@ class UploadedFile:
     _client: "Client" = None
 
     def __str__(self):
-        return pathlib.Path(self.s3_path).name
+        return self.s3_path
 
 
 @dataclass
