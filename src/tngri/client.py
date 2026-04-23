@@ -252,6 +252,8 @@ class Client:
                         "env_name": env_name,
                         "id": req_id,
                         "job_id": parent_job_id,
+                        "repository_id": self._config.repository_id,
+                        "branch": self._config.branch,
                     }
                 )
             )
