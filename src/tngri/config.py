@@ -111,3 +111,9 @@ class Config(S3Config, WSConfig):
     default_parent_job_id: str | None = dataclasses.field(
         default=None, metadata=dict(env="TNGRI_PARENT_JOB_ID")
     )  # type: ignore
+    repository_id: str | None = dataclasses.field(
+        default=None, metadata=dict(env="TNGRI_REPOSITORY_ID")
+    )  # type: ignore
+    branch: str | None = dataclasses.field(
+        default=None, metadata=dict(env="TNGRI_BRANCH")
+    )  # type: ignore
