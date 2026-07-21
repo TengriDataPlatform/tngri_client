@@ -288,7 +288,10 @@ class Client:
     ):
         data = pd.DataFrame(data)
         file = self.upload_df(data)
-        self.sql(f"""
-            CREATE {"OR REPLACE" if replace else ""} TABLE {table_name}
-            AS SELECT * FROM read_parquet('{file.s3_path}')
-        """)
+        try:
+            self.sql(f"""
+                CREATE {"OR REPLACE" if replace else ""} TABLE {table_name}
+                AS SELECT * FROM read_parquet('{file.s3_path}')
+            """)
+        finally:
+            self.delete_file(file)
