@@ -96,4 +96,8 @@ addopts = "--disable-warnings"
 [dependency-groups]
 dev = [
     "black>=25.1.0",
+    "pytest>=8.0.0",
+    "websockets>=13.0",
+    "moto[server]>=5.0",
+    "duckdb>=1.0",
 ]

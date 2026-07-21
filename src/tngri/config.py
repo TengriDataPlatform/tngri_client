@@ -104,6 +104,8 @@ class WSConfig(BaseConfig):
         default="ws://localhost:3001", metadata=dict(env="TNGRI_SITE_WS_ADDR")
     )
     ws_token: str | None = dataclasses.field(default=None, metadata=dict(env="TNGRI_ACCESS_TOKEN"))  # type: ignore
+    # CA/cert file trusted for a wss:// endpoint; needed for self-signed certs.
+    ws_ca_cert: str | None = dataclasses.field(default=None, metadata=dict(env="TNGRI_WS_CA_CERT"))  # type: ignore
 
 
 @dataclasses.dataclass

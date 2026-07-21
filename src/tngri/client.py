@@ -204,7 +204,8 @@ class Client:
     def _socket(self) -> Generator["WebSocket"]:
         from websocket._core import create_connection
 
-        ws = create_connection(self._config.ws_addr)
+        sslopt = {"ca_certs": self._config.ws_ca_cert} if self._config.ws_ca_cert else {}
+        ws = create_connection(self._config.ws_addr, sslopt=sslopt)
 
         # authenticate
         ws.send(json.dumps({"_type": "auth", "token": self._config.ws_token}))
