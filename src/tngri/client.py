@@ -1,15 +1,20 @@
 import datetime
+import http.cookies
 import io
 import json
 import os
 import pathlib
 import random
+import ssl
+import urllib.error
+import urllib.request
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from string import ascii_lowercase
+from urllib.parse import urlsplit
 
 import boto3
 import botocore.config
@@ -66,6 +71,13 @@ class RunStatus:
 
 def join_lines(lines: list[str]) -> str:
     return "\n".join(map(str.rstrip, lines))
+
+
+# Server → client cues that our access token is no longer accepted: the watchdog's
+# expiry nudge (``re_auth_required``) and the "you must authenticate" reply
+# (``auth_requested``). Either is the signal to refresh over HTTP — see
+# ``Client._refresh_token``.
+_REAUTH_TYPES = frozenset({"re_auth_required", "auth_requested"})
 
 
 class Client:
@@ -200,6 +212,58 @@ class Client:
         except Exception as e:
             raise RuntimeError(f"Error while executing: {e}") from e
 
+    def _auth_refresh_url(self) -> str:
+        """
+        The ``POST /auth/refresh`` endpoint on the HTTP/webapp server.
+        """
+        parts = urlsplit(self._config.ws_addr)
+        scheme = "https" if parts.scheme == "wss" else "http"
+        return f"{scheme}://{parts.netloc}/auth/refresh"
+
+    def _refresh_token(self) -> None:
+        if not self._config.ws_refresh_token:
+            raise RuntimeError(
+                "server requested re-authentication but this is an access-token-only session "
+                "(no TNGRI_REFRESH_TOKEN); cannot refresh"
+            )
+
+        url = self._auth_refresh_url()
+        request = urllib.request.Request(
+            url,
+            data=b"",
+            method="POST",
+            headers={"Cookie": f"refresh_token={self._config.ws_refresh_token}"},
+        )
+        context = (
+            ssl.create_default_context(cafile=self._config.ws_ca_cert)
+            if url.startswith("https://") and self._config.ws_ca_cert
+            else None
+        )
+        try:
+            with urllib.request.urlopen(request, context=context) as resp:
+                set_cookies = resp.headers.get_all("Set-Cookie") or []
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise RuntimeError(
+                    "token refresh rejected (401): refresh token expired or invalid, re-login "
+                    "required"
+                ) from e
+            raise RuntimeError(f"token refresh failed: HTTP {e.code}") from e
+
+        jar: http.cookies.SimpleCookie = http.cookies.SimpleCookie()
+        for cookie in set_cookies:
+            jar.load(cookie)
+        if "auth_token" in jar:
+            self._config.ws_token = jar["auth_token"].value
+        if "refresh_token" in jar:
+            self._config.ws_refresh_token = jar["refresh_token"].value
+
+    def _maybe_reauth(self, msg: dict) -> bool:
+        if msg.get("_type") in _REAUTH_TYPES:
+            self._refresh_token()
+            return True
+        return False
+
     @contextmanager
     def _socket(self) -> Generator["WebSocket"]:
         from websocket._core import create_connection
@@ -207,11 +271,16 @@ class Client:
         sslopt = {"ca_certs": self._config.ws_ca_cert} if self._config.ws_ca_cert else {}
         ws = create_connection(self._config.ws_addr, sslopt=sslopt)
 
-        # authenticate
-        ws.send(json.dumps({"_type": "auth", "token": self._config.ws_token}))
-        msg = json.loads(ws.recv())
+        def send_auth() -> dict:
+            ws.send(json.dumps({"_type": "auth", "token": self._config.ws_token}))
+            return json.loads(ws.recv())
 
-        if msg["_type"] != "auth_success":
+        msg = send_auth()
+        if msg.get("_type") in _REAUTH_TYPES:
+            self._refresh_token()
+            msg = send_auth()
+
+        if msg.get("_type") != "auth_success":
             ws.close()
             raise RuntimeError(f"Failed to authenticate in {self._config.ws_addr}")
 
@@ -228,6 +297,8 @@ class Client:
 
             while msg := ws.recv():
                 msg = json.loads(msg)
+                if self._maybe_reauth(msg):
+                    continue
                 if msg.get("id") != req_id:
                     continue
                 elif msg["_type"] == "query_finished" and msg.get("error"):
@@ -261,6 +332,8 @@ class Client:
 
             while msg := ws.recv():
                 msg = json.loads(msg)
+                if self._maybe_reauth(msg):
+                    continue
                 if msg.get("id") != req_id:
                     continue
                 elif msg["_type"] == "notebook_finished" and msg.get("error"):
