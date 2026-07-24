@@ -276,7 +276,7 @@ class Client:
             return json.loads(ws.recv())
 
         msg = send_auth()
-        if msg.get("_type") in _REAUTH_TYPES:
+        if msg.get("_type") in _REAUTH_TYPES and self._config.ws_refresh_token:
             self._refresh_token()
             msg = send_auth()
 
