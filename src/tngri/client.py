@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from string import ascii_lowercase
+from typing import Any
 from urllib.parse import urlsplit
 
 import boto3
@@ -307,7 +308,11 @@ class Client:
                     return self._rows_to_df(msg["result"])
 
     def run_notebook(
-        self, notebook_id: str, env_name: str | None = None, parent_job_id: str | None = None
+        self,
+        path: str,
+        env_name: str | None = None,
+        parent_job_id: str | None = None,
+        variables: dict[str, Any] | None = None,
     ) -> RunStatus:
         if not parent_job_id:
             parent_job_id = self._config.default_parent_job_id
@@ -320,12 +325,13 @@ class Client:
                 json.dumps(
                     {
                         "_type": "notebook",
-                        "notebook_id": notebook_id,
+                        "notebook_id": path,
                         "env_name": env_name,
                         "id": req_id,
                         "job_id": parent_job_id,
                         "repository_id": self._config.repository_id,
                         "branch": self._config.branch,
+                        "variables": variables,
                     }
                 )
             )

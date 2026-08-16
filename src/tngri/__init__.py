@@ -1,4 +1,5 @@
 import pathlib
+from typing import Any
 
 import pandas as pd
 import polars
@@ -98,9 +99,15 @@ def sql(sql: str, *, client: Client | None = None):
     return _c.sql(sql)
 
 
-def run_notebook(notebook_id: str, env_name: str | None = None, client: Client | None = None):
+def run_notebook(
+    path: str,
+    env_name: str | None = None,
+    variables: dict[str, Any] | None = None,
+    *,
+    client: Client | None = None,
+):
     _c = _client_or_raise(client)
-    return _c.run_notebook(notebook_id, env_name)
+    return _c.run_notebook(path, env_name, variables=variables)
 
 
 def create_table(data: pd.DataFrame | polars.DataFrame, table_name: str, replace: bool = False):
