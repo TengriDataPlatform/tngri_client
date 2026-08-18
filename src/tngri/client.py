@@ -311,11 +311,9 @@ class Client:
         self,
         path: str,
         env_name: str | None = None,
-        parent_job_id: str | None = None,
         variables: dict[str, Any] | None = None,
     ) -> RunStatus:
-        if not parent_job_id:
-            parent_job_id = self._config.default_parent_job_id
+        parent_job_id = self._config.default_parent_job_id
 
         with self._socket() as ws:
             req_id = str(uuid.uuid4())
