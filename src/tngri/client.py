@@ -15,7 +15,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from string import ascii_lowercase
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import boto3
 import botocore.config
@@ -269,8 +269,11 @@ class Client:
     def _socket(self) -> Generator["WebSocket"]:
         from websocket._core import create_connection
 
+        url = self._config.ws_addr
+        if self._config.parent_session_id:
+            url += "?" + urlencode({"parent_session_id": self._config.parent_session_id})
         sslopt = {"ca_certs": self._config.ws_ca_cert} if self._config.ws_ca_cert else {}
-        ws = create_connection(self._config.ws_addr, sslopt=sslopt)
+        ws = create_connection(url, sslopt=sslopt)
 
         def send_auth() -> dict:
             ws.send(json.dumps({"_type": "auth", "token": self._config.ws_token}))

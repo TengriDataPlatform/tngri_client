@@ -122,3 +122,4 @@ class Config(S3Config, WSConfig):
     branch: str | None = dataclasses.field(
         default=None, metadata=dict(env="TNGRI_BRANCH")
     )  # type: ignore
+    parent_session_id: str | None = None
