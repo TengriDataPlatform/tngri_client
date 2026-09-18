@@ -1,6 +1,6 @@
 [project]
 name = "tngri"
-version = "0.1.0"
+version = "0.1.1"
 description = "Client for TNGRi distributed analytical platform"
 readme = "README.md"
 requires-python = ">=3.13"
