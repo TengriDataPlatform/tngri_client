@@ -288,11 +288,10 @@ class Client:
             ws.close()
             raise RuntimeError(f"Failed to authenticate in {self._config.ws_addr}")
 
-        # use socket
-        yield ws
-
-        # close socket
-        ws.close()
+        try:
+            yield ws
+        finally:
+            ws.close()
 
     def sql(self, sql: str):
         with self._socket() as ws:

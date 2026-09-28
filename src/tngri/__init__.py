@@ -25,6 +25,7 @@ def _client_or_raise(c: Client | None = None) -> Client:
 
 
 def set_default_client(c: Client | None = None):
+    global _DEFAULT_CLIENT
     _DEFAULT_CLIENT = c
 
 
