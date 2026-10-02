@@ -35,7 +35,7 @@ def moto_server() -> Iterator[str]:
 
 @pytest.fixture
 def s3_client(moto_server) -> Client:
-    """A Client pointed at moto, with a fresh empty bucket per test."""
+    """A Client pointed at moto as alice, with a fresh empty bucket per test."""
     bucket = f"regress-{uuid.uuid4().hex}"
     client = Client(
         Config(
@@ -48,6 +48,7 @@ def s3_client(moto_server) -> Client:
         )
     )
     client._s3_client().create_bucket(Bucket=bucket)
+    client._home_folder = "home/alice"
     return client
 
 

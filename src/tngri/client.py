@@ -1,4 +1,5 @@
 import datetime
+import functools
 import http.cookies
 import io
 import json
@@ -100,26 +101,33 @@ class Client:
             config=client_config,
         )
 
+    @functools.cached_property
+    def _home_folder(self) -> str:
+        return f"home/{self.sql('SELECT current_user').iloc[0, 0]}"
+
+    def _stage_key(self, path: str) -> str:
+        if path.startswith("/"):
+            return f"Stage{path}"
+        return f"Stage/{self._home_folder}/{path}"
+
     def upload_file(self, filepath: str, filename: str | None = None) -> UploadedFile:
         filepath = pathlib.Path(filepath)
         if not filepath.exists():
             raise ValueError(f"File {filepath} does not exist")
 
-        if not filename:
-            filename = f"{_randstr()}{filepath.suffix}"
+        key = self._stage_key(filename or f"{_randstr()}{filepath.suffix}")
 
         s3_client = self._s3_client()
 
-        s3_client.upload_file(filepath, self._config.s3_bucket_name, f"Stage/{filename}")
+        s3_client.upload_file(filepath, self._config.s3_bucket_name, key)
 
-        return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
+        return UploadedFile(f"s3://{self._config.s3_bucket_name}/{key}")
 
     def upload_df(self, df: object, filename: str | None = None) -> UploadedFile:
         if not hasattr(df, "write_parquet"):
             df = polars.DataFrame(df)
 
-        if not filename:
-            filename = f"{_randstr()}.parquet"
+        key = self._stage_key(filename or f"{_randstr()}.parquet")
 
         s3_client = self._s3_client()
 
@@ -127,11 +135,9 @@ class Client:
         df.write_parquet(buffer)
         parquet = buffer.getvalue()
 
-        s3_client.put_object(
-            Body=parquet, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}"
-        )
+        s3_client.put_object(Body=parquet, Bucket=self._config.s3_bucket_name, Key=key)
 
-        return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
+        return UploadedFile(f"s3://{self._config.s3_bucket_name}/{key}")
 
     def upload_s3(
         self,
@@ -165,22 +171,23 @@ class Client:
             source_client = boto3.client("s3")
             obj = source_client.get_object(Bucket=bucket, Key=object)["Body"]
 
-        if not filename:
-            filename = f"{_randstr()}.{pathlib.Path(object).suffix[1:]}"
+        key = self._stage_key(filename or f"{_randstr()}{pathlib.Path(object).suffix}")
 
         s3_client = self._s3_client()
-        s3_client.upload_fileobj(obj, Bucket=self._config.s3_bucket_name, Key=f"Stage/{filename}")
+        s3_client.upload_fileobj(obj, Bucket=self._config.s3_bucket_name, Key=key)
 
-        return UploadedFile(f"s3://{self._config.s3_bucket_name}/Stage/{filename}")
+        return UploadedFile(f"s3://{self._config.s3_bucket_name}/{key}")
 
     def list_files(self, filepath: str = "") -> list[StagedFile]:
         s3_client = self._s3_client()
 
         paginator = s3_client.get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=self._config.s3_bucket_name, Prefix=f"Stage/{filepath}")
+        pages = paginator.paginate(
+            Bucket=self._config.s3_bucket_name, Prefix=self._stage_key(filepath)
+        )
         return [
             StagedFile(
-                obj["Key"].removeprefix("Stage/"), obj.get("Size", 0), obj.get("LastModified")
+                obj["Key"].removeprefix("Stage"), obj.get("Size", 0), obj.get("LastModified")
             )
             for page in pages
             for obj in page.get("Contents", [])
@@ -188,21 +195,14 @@ class Client:
         ]
 
     def delete_file(self, file: str | StagedFile | UploadedFile):
-        s3_client = self._s3_client()
-
-        def normalize_stage_path(path: str):
-            path = path.removeprefix(f"s3://{self._config.s3_bucket_name}/")
-            return path if path.startswith("Stage/") else f"Stage/{path}"
-
-        if isinstance(file, StagedFile):
-            path = normalize_stage_path(file.path)
-            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=path)
-        elif isinstance(file, UploadedFile):
-            path = normalize_stage_path(file.s3_path)
-            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=path)
+        if isinstance(file, UploadedFile):
+            key = file.s3_path.removeprefix(f"s3://{self._config.s3_bucket_name}/")
+        elif isinstance(file, StagedFile):
+            key = self._stage_key(file.path)
         else:
-            path = normalize_stage_path(file)
-            s3_client.delete_object(Bucket=self._config.s3_bucket_name, Key=path)
+            key = self._stage_key(file)
+
+        self._s3_client().delete_object(Bucket=self._config.s3_bucket_name, Key=key)
 
     @staticmethod
     def _rows_to_df(rows):
