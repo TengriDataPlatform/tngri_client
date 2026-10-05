@@ -123,3 +123,4 @@ class Config(S3Config, WSConfig):
         default=None, metadata=dict(env="TNGRI_BRANCH")
     )  # type: ignore
     parent_session_id: str | None = None
+    user_name: str | None = dataclasses.field(default=None, metadata=dict(env="TNGRI_USER_NAME"))

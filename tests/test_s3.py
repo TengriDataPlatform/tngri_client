@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from tngri.client import StagedFile, UploadedFile
+from tngri.config import Config
 
 
 @pytest.fixture
@@ -107,6 +108,11 @@ def test_delete_file(s3_client, df, as_type):
     assert s3_client.list_files() == []
 
 
-def test_home_folder_is_named_after_current_user(sql_env):
+def test_home_folder_uses_user_name_from_login_reply(sql_env):
     client, _ = sql_env
-    assert client._home_folder == "home/duckdb"
+    assert client._home_folder == "home/bob"
+
+
+def test_user_name_is_read_from_the_environment(monkeypatch):
+    monkeypatch.setenv("TNGRI_USER_NAME", "carol")
+    assert Config.from_env().user_name == "carol"

@@ -1,5 +1,4 @@
 import datetime
-import functools
 import http.cookies
 import io
 import json
@@ -101,9 +100,16 @@ class Client:
             config=client_config,
         )
 
-    @functools.cached_property
+    @property
     def _home_folder(self) -> str:
-        return f"home/{self.sql('SELECT current_user').iloc[0, 0]}"
+        if not self._config.user_name:
+            with self._socket():
+                pass
+        if not self._config.user_name:
+            raise RuntimeError(
+                "cannot resolve the home folder: the server did not report a user name; set TNGRI_USER_NAME"
+            )
+        return f"home/{self._config.user_name}"
 
     def _stage_key(self, path: str) -> str:
         if path.startswith("/"):
@@ -287,6 +293,8 @@ class Client:
         if msg.get("_type") != "auth_success":
             ws.close()
             raise RuntimeError(f"Failed to authenticate in {self._config.ws_addr}")
+        if user_name := msg.get("user_name"):
+            self._config.user_name = user_name
 
         try:
             yield ws

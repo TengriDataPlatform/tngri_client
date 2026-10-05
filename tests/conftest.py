@@ -45,10 +45,10 @@ def s3_client(moto_server) -> Client:
             s3_secret_access_key="test",
             s3_region="us-east-1",
             s3_bucket_name=bucket,
+            user_name="alice",
         )
     )
     client._s3_client().create_bucket(Bucket=bucket)
-    client._home_folder = "home/alice"
     return client
 
 
@@ -70,7 +70,7 @@ def sql_env() -> Iterator[tuple[Client, duckdb.DuckDBPyConnection]]:
             for message in ws:
                 msg = json.loads(message)
                 if msg["_type"] == "auth":
-                    ws.send(json.dumps({"_type": "auth_success"}))
+                    ws.send(json.dumps({"_type": "auth_success", "user_name": "bob"}))
                 elif msg["_type"] == "query":
                     try:
                         with lock:
