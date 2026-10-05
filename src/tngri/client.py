@@ -83,7 +83,7 @@ _REAUTH_TYPES = frozenset({"re_auth_required", "auth_requested"})
 
 @dataclass(frozen=True)
 class StorageAccess:
-    """Where the caller's staging is, and the personal key that reaches it, as the server says."""
+    """Where the caller's staging is, and the key that reaches it."""
 
     endpoint: str
     region: str
@@ -104,11 +104,26 @@ class Client:
         return cls(Config.from_env())
 
     def _storage_access(self) -> StorageAccess:
+        """
+        The prefixes always come from the server; the key, endpoint, bucket and
+        region come from the S3 settings when they are given, and from the
+        server otherwise.
+        """
         if self._cached_storage_access is None:
             reply = self._get_json("/v1/storage/credentials")
-            if not reply.get("endpoint"):
+            config = self._config
+            if config.s3_access_key_id:
+                reply = reply | {
+                    "endpoint": config.s3_endpoint_url,
+                    "region": config.s3_region,
+                    "bucket": config.s3_bucket_name,
+                    "access_key": config.s3_access_key_id,
+                    "secret_key": config.s3_secret_access_key,
+                }
+            elif not reply.get("endpoint"):
                 raise RuntimeError(
-                    "the server has no S3 access proxy, so staging cannot be reached with your own key"
+                    "the server has no S3 access proxy, so staging cannot be reached with your "
+                    "own key; set the TNGRI_S3_* settings instead"
                 )
             self._cached_storage_access = StorageAccess(
                 endpoint=reply["endpoint"],

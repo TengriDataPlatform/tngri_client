@@ -136,3 +136,32 @@ def test_staging_fails_when_server_has_no_s3_proxy(credentials_route):
     client = Client(Config(ws_addr=f"ws://127.0.0.1:{credentials_route.port}", ws_token="t"))
     with pytest.raises(RuntimeError, match="no S3 access proxy"):
         client.list_files()
+
+
+def test_s3_settings_override_the_key_and_keep_the_servers_prefixes(credentials_route, df):
+    reply = credentials_route.reply
+    client = Client(
+        Config(
+            ws_addr=f"ws://127.0.0.1:{credentials_route.port}",
+            ws_token="t",
+            s3_endpoint_url=reply["endpoint"],
+            s3_region=reply["region"],
+            s3_bucket_name=reply["bucket"],
+            s3_access_key_id="test",
+            s3_secret_access_key="test",
+        )
+    )
+    # The server's own key would not reach moto: only the settings' key can.
+    reply.update(endpoint=None, access_key="not-this-one")
+    client._s3_client().create_bucket(Bucket=reply["bucket"])
+
+    assert client.upload_df(df, filename="x.parquet").s3_path.endswith(
+        "/Stage/home/alice/x.parquet"
+    )
+    assert client._storage_access().access_key == "test"
+    assert credentials_route.authorizations == ["Bearer t"]
+
+
+def test_s3_settings_are_read_from_the_environment(monkeypatch):
+    monkeypatch.setenv("TNGRI_S3_ACCESS_KEY_ID", "key")
+    assert Config.from_env().s3_access_key_id == "key"
