@@ -81,40 +81,63 @@ def join_lines(lines: list[str]) -> str:
 _REAUTH_TYPES = frozenset({"re_auth_required", "auth_requested"})
 
 
+@dataclass(frozen=True)
+class StorageAccess:
+    """Where the caller's staging is, and the personal key that reaches it, as the server says."""
+
+    endpoint: str
+    region: str
+    bucket: str
+    access_key: str
+    secret_key: str
+    staging_prefix: str
+    own_prefix: str
+
+
 class Client:
     def __init__(self, config: Config | None = None):
         self._config = config
+        self._cached_storage_access: StorageAccess | None = None
 
     @classmethod
     def from_env(cls):
         return cls(Config.from_env())
 
+    def _storage_access(self) -> StorageAccess:
+        if self._cached_storage_access is None:
+            reply = self._get_json("/v1/storage/credentials")
+            if not reply.get("endpoint"):
+                raise RuntimeError(
+                    "the server has no S3 access proxy, so staging cannot be reached with your own key"
+                )
+            self._cached_storage_access = StorageAccess(
+                endpoint=reply["endpoint"],
+                region=reply["region"],
+                bucket=reply["bucket"],
+                access_key=reply["access_key"],
+                secret_key=reply["secret_key"],
+                staging_prefix=reply["staging_prefix"],
+                own_prefix=reply["own_prefix"],
+            )
+        return self._cached_storage_access
+
     def _s3_client(self):
+        storage = self._storage_access()
         client_config = botocore.config.Config(request_checksum_calculation="WHEN_REQUIRED")  # type: ignore
         return boto3.client(
             "s3",
-            endpoint_url=self._config.s3_endpoint_url,
-            aws_access_key_id=self._config.s3_access_key_id,
-            aws_secret_access_key=self._config.s3_secret_access_key,
-            region_name=self._config.s3_region,
+            endpoint_url=storage.endpoint,
+            aws_access_key_id=storage.access_key,
+            aws_secret_access_key=storage.secret_key,
+            region_name=storage.region,
             config=client_config,
         )
 
-    @property
-    def _home_folder(self) -> str:
-        if not self._config.user_name:
-            with self._socket():
-                pass
-        if not self._config.user_name:
-            raise RuntimeError(
-                "cannot resolve the home folder: the server did not report a user name; set TNGRI_USER_NAME"
-            )
-        return f"home/{self._config.user_name}"
-
     def _stage_key(self, path: str) -> str:
+        storage = self._storage_access()
         if path.startswith("/"):
-            return f"Stage{path}"
-        return f"Stage/{self._home_folder}/{path}"
+            return f"{storage.staging_prefix}{path}"
+        return f"{storage.own_prefix}/{path}"
 
     def upload_file(self, filepath: str, filename: str | None = None) -> UploadedFile:
         filepath = pathlib.Path(filepath)
@@ -125,9 +148,9 @@ class Client:
 
         s3_client = self._s3_client()
 
-        s3_client.upload_file(filepath, self._config.s3_bucket_name, key)
+        s3_client.upload_file(filepath, self._storage_access().bucket, key)
 
-        return UploadedFile(f"s3://{self._config.s3_bucket_name}/{key}")
+        return UploadedFile(f"s3://{self._storage_access().bucket}/{key}")
 
     def upload_df(self, df: object, filename: str | None = None) -> UploadedFile:
         if not hasattr(df, "write_parquet"):
@@ -141,9 +164,9 @@ class Client:
         df.write_parquet(buffer)
         parquet = buffer.getvalue()
 
-        s3_client.put_object(Body=parquet, Bucket=self._config.s3_bucket_name, Key=key)
+        s3_client.put_object(Body=parquet, Bucket=self._storage_access().bucket, Key=key)
 
-        return UploadedFile(f"s3://{self._config.s3_bucket_name}/{key}")
+        return UploadedFile(f"s3://{self._storage_access().bucket}/{key}")
 
     def upload_s3(
         self,
@@ -180,20 +203,22 @@ class Client:
         key = self._stage_key(filename or f"{_randstr()}{pathlib.Path(object).suffix}")
 
         s3_client = self._s3_client()
-        s3_client.upload_fileobj(obj, Bucket=self._config.s3_bucket_name, Key=key)
+        s3_client.upload_fileobj(obj, Bucket=self._storage_access().bucket, Key=key)
 
-        return UploadedFile(f"s3://{self._config.s3_bucket_name}/{key}")
+        return UploadedFile(f"s3://{self._storage_access().bucket}/{key}")
 
     def list_files(self, filepath: str = "") -> list[StagedFile]:
         s3_client = self._s3_client()
 
         paginator = s3_client.get_paginator("list_objects_v2")
         pages = paginator.paginate(
-            Bucket=self._config.s3_bucket_name, Prefix=self._stage_key(filepath)
+            Bucket=self._storage_access().bucket, Prefix=self._stage_key(filepath)
         )
         return [
             StagedFile(
-                obj["Key"].removeprefix("Stage"), obj.get("Size", 0), obj.get("LastModified")
+                obj["Key"].removeprefix(self._storage_access().staging_prefix),
+                obj.get("Size", 0),
+                obj.get("LastModified"),
             )
             for page in pages
             for obj in page.get("Contents", [])
@@ -202,13 +227,13 @@ class Client:
 
     def delete_file(self, file: str | StagedFile | UploadedFile):
         if isinstance(file, UploadedFile):
-            key = file.s3_path.removeprefix(f"s3://{self._config.s3_bucket_name}/")
+            key = file.s3_path.removeprefix(f"s3://{self._storage_access().bucket}/")
         elif isinstance(file, StagedFile):
             key = self._stage_key(file.path)
         else:
             key = self._stage_key(file)
 
-        self._s3_client().delete_object(Bucket=self._config.s3_bucket_name, Key=key)
+        self._s3_client().delete_object(Bucket=self._storage_access().bucket, Key=key)
 
     @staticmethod
     def _rows_to_df(rows):
@@ -219,13 +244,36 @@ class Client:
         except Exception as e:
             raise RuntimeError(f"Error while executing: {e}") from e
 
-    def _auth_refresh_url(self) -> str:
-        """
-        The ``POST /auth/refresh`` endpoint on the HTTP/webapp server.
-        """
+    def _server_url(self, path: str) -> str:
+        """An HTTP endpoint the server serves on the websocket port."""
         parts = urlsplit(self._config.ws_addr)
         scheme = "https" if parts.scheme == "wss" else "http"
-        return f"{scheme}://{parts.netloc}/auth/refresh"
+        return f"{scheme}://{parts.netloc}{path}"
+
+    def _auth_refresh_url(self) -> str:
+        return self._server_url("/auth/refresh")
+
+    def _ssl_context(self, url: str) -> ssl.SSLContext | None:
+        if url.startswith("https://") and self._config.ws_ca_cert:
+            return ssl.create_default_context(cafile=self._config.ws_ca_cert)
+        return None
+
+    def _get_json(self, path: str) -> dict:
+        """GET a JSON endpoint as the caller, refreshing the access token once if it was refused."""
+        url = self._server_url(path)
+        for attempt in range(2):
+            request = urllib.request.Request(
+                url, headers={"Authorization": f"Bearer {self._config.ws_token}"}
+            )
+            try:
+                with urllib.request.urlopen(request, context=self._ssl_context(url)) as resp:
+                    return json.load(resp)
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and attempt == 0 and self._config.ws_refresh_token:
+                    self._refresh_token()
+                    continue
+                raise RuntimeError(f"GET {path} failed: HTTP {e.code}") from e
+        raise AssertionError("unreachable")
 
     def _refresh_token(self) -> None:
         if not self._config.ws_refresh_token:
@@ -241,13 +289,8 @@ class Client:
             method="POST",
             headers={"Cookie": f"refresh_token={self._config.ws_refresh_token}"},
         )
-        context = (
-            ssl.create_default_context(cafile=self._config.ws_ca_cert)
-            if url.startswith("https://") and self._config.ws_ca_cert
-            else None
-        )
         try:
-            with urllib.request.urlopen(request, context=context) as resp:
+            with urllib.request.urlopen(request, context=self._ssl_context(url)) as resp:
                 set_cookies = resp.headers.get_all("Set-Cookie") or []
         except urllib.error.HTTPError as e:
             if e.code == 401:
@@ -293,8 +336,6 @@ class Client:
         if msg.get("_type") != "auth_success":
             ws.close()
             raise RuntimeError(f"Failed to authenticate in {self._config.ws_addr}")
-        if user_name := msg.get("user_name"):
-            self._config.user_name = user_name
 
         try:
             yield ws

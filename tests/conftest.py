@@ -12,6 +12,8 @@ import json
 import threading
 import uuid
 from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import ClassVar
 
 import duckdb
 import pytest
@@ -33,22 +35,54 @@ def moto_server() -> Iterator[str]:
     server.stop()
 
 
+class _CredentialsRoute(BaseHTTPRequestHandler):
+    """The server's GET /v1/storage/credentials, answering for alice with moto's address."""
+
+    reply: ClassVar[dict] = {}
+    authorizations: ClassVar[list[str | None]] = []
+
+    def do_GET(self) -> None:
+        type(self).authorizations.append(self.headers.get("Authorization"))
+        if self.path != "/v1/storage/credentials":
+            self.send_error(404)
+            return
+        body = json.dumps(type(self).reply).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args) -> None:
+        pass
+
+
 @pytest.fixture
-def s3_client(moto_server) -> Client:
-    """A Client pointed at moto as alice, with a fresh empty bucket per test."""
-    bucket = f"regress-{uuid.uuid4().hex}"
-    client = Client(
-        Config(
-            ws_addr="ws://unused",
-            s3_endpoint_url=moto_server,
-            s3_access_key_id="test",
-            s3_secret_access_key="test",
-            s3_region="us-east-1",
-            s3_bucket_name=bucket,
-            user_name="alice",
-        )
-    )
-    client._s3_client().create_bucket(Bucket=bucket)
+def credentials_route(moto_server) -> Iterator[type[_CredentialsRoute]]:
+    """The credentials route on its own port, with a fresh bucket named in its reply."""
+    route = type("Route", (_CredentialsRoute,), {"authorizations": []})
+    route.reply = {
+        "endpoint": moto_server,
+        "region": "us-east-1",
+        "bucket": f"regress-{uuid.uuid4().hex}",
+        "access_key": "test",
+        "secret_key": "test",
+        "staging_prefix": "Stage",
+        "own_prefix": "Stage/home/alice",
+        "public_prefix": "Stage/public",
+    }
+    server = HTTPServer(("127.0.0.1", 0), route)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    route.port = server.server_address[1]
+    yield route
+    server.shutdown()
+
+
+@pytest.fixture
+def s3_client(credentials_route) -> Client:
+    """A Client that learns its storage from the credentials route, as alice."""
+    client = Client(Config(ws_addr=f"ws://127.0.0.1:{credentials_route.port}", ws_token="t"))
+    client._s3_client().create_bucket(Bucket=credentials_route.reply["bucket"])
     return client
 
 
@@ -70,7 +104,7 @@ def sql_env() -> Iterator[tuple[Client, duckdb.DuckDBPyConnection]]:
             for message in ws:
                 msg = json.loads(message)
                 if msg["_type"] == "auth":
-                    ws.send(json.dumps({"_type": "auth_success", "user_name": "bob"}))
+                    ws.send(json.dumps({"_type": "auth_success"}))
                 elif msg["_type"] == "query":
                     try:
                         with lock:
@@ -78,7 +112,9 @@ def sql_env() -> Iterator[tuple[Client, duckdb.DuckDBPyConnection]]:
                             schema = [[d[0], str(d[1])] for d in cur.description]
                             rows = [list(r) for r in cur.fetchall()]
                         payload = {
-                            "_type": "query_finished", "id": msg["id"], "result": [schema, *rows]
+                            "_type": "query_finished",
+                            "id": msg["id"],
+                            "result": [schema, *rows],
                         }
                     except Exception as e:
                         payload = {"_type": "query_finished", "id": msg["id"], "error": str(e)}
