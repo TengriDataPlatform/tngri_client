@@ -105,35 +105,38 @@ class Client:
 
     def _storage_access(self) -> StorageAccess:
         """
-        The prefixes always come from the server; the key, endpoint, bucket and
-        region come from the S3 settings when they are given, and from the
-        server otherwise.
+        Storage access comes from the TNGRI_S3_* settings when they are set, so
+        servers without /v1/storage/credentials still work, and from that route
+        otherwise.
         """
         if self._cached_storage_access is None:
-            reply = self._get_json("/v1/storage/credentials")
             config = self._config
             if config.s3_access_key_id:
-                reply = reply | {
-                    "endpoint": config.s3_endpoint_url,
-                    "region": config.s3_region,
-                    "bucket": config.s3_bucket_name,
-                    "access_key": config.s3_access_key_id,
-                    "secret_key": config.s3_secret_access_key,
-                }
-            elif not reply.get("endpoint"):
-                raise RuntimeError(
-                    "the server has no S3 access proxy, so staging cannot be reached with your "
-                    "own key; set the TNGRI_S3_* settings instead"
+                self._cached_storage_access = StorageAccess(
+                    endpoint=config.s3_endpoint_url,
+                    region=config.s3_region,
+                    bucket=config.s3_bucket_name,
+                    access_key=config.s3_access_key_id,
+                    secret_key=config.s3_secret_access_key,
+                    staging_prefix="Stage",
+                    own_prefix="Stage",
                 )
-            self._cached_storage_access = StorageAccess(
-                endpoint=reply["endpoint"],
-                region=reply["region"],
-                bucket=reply["bucket"],
-                access_key=reply["access_key"],
-                secret_key=reply["secret_key"],
-                staging_prefix=reply["staging_prefix"],
-                own_prefix=reply["own_prefix"],
-            )
+            else:
+                reply = self._get_json("/v1/storage/credentials")
+                if not reply.get("endpoint"):
+                    raise RuntimeError(
+                        "the server has no S3 access proxy, so staging cannot be reached with your "
+                        "own key; set the TNGRI_S3_* settings instead"
+                    )
+                self._cached_storage_access = StorageAccess(
+                    endpoint=reply["endpoint"],
+                    region=reply["region"],
+                    bucket=reply["bucket"],
+                    access_key=reply["access_key"],
+                    secret_key=reply["secret_key"],
+                    staging_prefix=reply["staging_prefix"],
+                    own_prefix=reply["own_prefix"],
+                )
         return self._cached_storage_access
 
     def _s3_client(self):

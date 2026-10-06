@@ -138,7 +138,7 @@ def test_staging_fails_when_server_has_no_s3_proxy(credentials_route):
         client.list_files()
 
 
-def test_s3_settings_override_the_key_and_keep_the_servers_prefixes(credentials_route, df):
+def test_s3_settings_skip_the_credentials_route(credentials_route, df):
     reply = credentials_route.reply
     client = Client(
         Config(
@@ -151,15 +151,13 @@ def test_s3_settings_override_the_key_and_keep_the_servers_prefixes(credentials_
             s3_secret_access_key="test",
         )
     )
-    # The server's own key would not reach moto: only the settings' key can.
-    reply.update(endpoint=None, access_key="not-this-one")
     client._s3_client().create_bucket(Bucket=reply["bucket"])
 
     assert client.upload_df(df, filename="x.parquet").s3_path.endswith(
-        "/Stage/home/alice/x.parquet"
+        "/Stage/x.parquet"
     )
-    assert client._storage_access().access_key == "test"
-    assert credentials_route.authorizations == ["Bearer t"]
+    assert [f.path for f in client.list_files("/")] == ["/x.parquet"]
+    assert credentials_route.authorizations == []
 
 
 def test_s3_settings_are_read_from_the_environment(monkeypatch):
