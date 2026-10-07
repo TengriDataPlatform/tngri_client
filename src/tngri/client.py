@@ -118,8 +118,8 @@ class Client:
                     bucket=config.s3_bucket_name,
                     access_key=config.s3_access_key_id,
                     secret_key=config.s3_secret_access_key,
-                    staging_prefix="Stage",
-                    own_prefix="Stage",
+                    staging_prefix=config.s3_staging_prefix or "Stage",
+                    own_prefix=config.s3_default_prefix or "Stage",
                 )
             else:
                 reply = self._get_json("/v1/storage/credentials")

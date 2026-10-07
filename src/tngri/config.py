@@ -96,6 +96,8 @@ class S3Config(BaseConfig):
         default=None, metadata=dict(additional_env="AWS_ENDPOINT_URL")
     )  # type: ignore
     s3_bucket_name: str | None = None
+    s3_staging_prefix: str | None = None
+    s3_default_prefix: str | None = None
 
 
 @dataclasses.dataclass
