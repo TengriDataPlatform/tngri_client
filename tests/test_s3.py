@@ -163,3 +163,29 @@ def test_s3_settings_skip_the_credentials_route(credentials_route, df):
 def test_s3_settings_are_read_from_the_environment(monkeypatch):
     monkeypatch.setenv("TNGRI_S3_ACCESS_KEY_ID", "key")
     assert Config.from_env().s3_access_key_id == "key"
+
+
+def test_s3_settings_carry_the_staging_and_default_prefixes(credentials_route, df):
+    reply = credentials_route.reply
+    client = Client(
+        Config(
+            ws_addr=f"ws://127.0.0.1:{credentials_route.port}",
+            ws_token="t",
+            s3_endpoint_url=reply["endpoint"],
+            s3_region=reply["region"],
+            s3_bucket_name=reply["bucket"],
+            s3_access_key_id="test",
+            s3_secret_access_key="test",
+            s3_staging_prefix="staging",
+            s3_default_prefix="staging/home/alice",
+        )
+    )
+    client._s3_client().create_bucket(Bucket=reply["bucket"])
+
+    assert client.upload_df(df, filename="x.parquet").s3_path.endswith(
+        "/staging/home/alice/x.parquet"
+    )
+    assert client.upload_df(df, filename="/public/y.parquet").s3_path.endswith(
+        "/staging/public/y.parquet"
+    )
+    assert credentials_route.authorizations == []
