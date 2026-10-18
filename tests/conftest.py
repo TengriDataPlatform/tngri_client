@@ -100,24 +100,41 @@ def sql_env() -> Iterator[tuple[Client, duckdb.DuckDBPyConnection]]:
     def handler(ws) -> None:
         # The client closes the socket abruptly after each call; that surfaces as
         # ConnectionClosed on the next recv, which just ends this handler.
+        batches: dict[str, tuple[duckdb.DuckDBPyConnection, list, int]] = {}
         try:
             for message in ws:
                 msg = json.loads(message)
                 if msg["_type"] == "auth":
                     ws.send(json.dumps({"_type": "auth_success"}))
                 elif msg["_type"] == "query":
+                    batch_rows = msg.get("batch_rows")
                     try:
                         with lock:
-                            cur = con.execute(msg["query"])
+                            cur = con.cursor().execute(msg["query"])
                             schema = [[d[0], str(d[1])] for d in cur.description]
-                            rows = [list(r) for r in cur.fetchall()]
+                            fetched = cur.fetchmany(batch_rows) if batch_rows else cur.fetchall()
+                            rows = [list(r) for r in fetched]
                         payload = {
                             "_type": "query_finished",
                             "id": msg["id"],
                             "result": [schema, *rows],
                         }
+                        if batch_rows:
+                            payload["metadata"] = {"hasMore": len(rows) == batch_rows}
+                            batches[msg["id"]] = (cur, schema, batch_rows)
                     except Exception as e:
                         payload = {"_type": "query_finished", "id": msg["id"], "error": str(e)}
+                    ws.send(json.dumps(payload, default=str))
+                elif msg["_type"] == "fetch":
+                    cur, schema, batch_rows = batches[msg["id"]]
+                    with lock:
+                        rows = [list(r) for r in cur.fetchmany(batch_rows)]
+                    payload = {
+                        "_type": "query_finished",
+                        "id": msg["id"],
+                        "result": [schema, *rows],
+                        "metadata": {"hasMore": len(rows) == batch_rows},
+                    }
                     ws.send(json.dumps(payload, default=str))
         except ConnectionClosed:
             pass

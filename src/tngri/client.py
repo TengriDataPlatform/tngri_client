@@ -6,15 +6,17 @@ import os
 import pathlib
 import random
 import ssl
+import threading
 import urllib.error
 import urllib.request
 import uuid
-from collections.abc import Generator
+import weakref
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from string import ascii_lowercase
-from typing import Any
+from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlencode, urlsplit
 
 import boto3
@@ -23,6 +25,9 @@ import pandas as pd
 import polars
 
 from .config import Config
+
+if TYPE_CHECKING:
+    from websocket import WebSocket
 
 
 def _randstr(length: int = 12):
@@ -360,21 +365,49 @@ class Client:
         finally:
             ws.close()
 
-    def sql(self, sql: str):
+    def sql(self, sql: str, batch_rows: int = 100_000) -> "SqlResult":
+        previous = getattr(_thread, "result", None)
+        if previous is not None and (unread := previous()) is not None and not unread._closed:
+            unread.close()
+
+        batches = self._sql_batches(sql, batch_rows)
+        result = SqlResult(next(batches), batches)
+
+        _thread.result = weakref.ref(result)
+        return result
+
+    def _sql_batches(self, sql: str, batch_rows: int) -> Generator[pd.DataFrame]:
         with self._socket() as ws:
             req_id = str(uuid.uuid4())
-            ws.send(json.dumps({"_type": "query", "query": sql, "id": req_id}))
+            ws.send(
+                json.dumps(
+                    {"_type": "query", "query": sql, "id": req_id, "batch_rows": batch_rows}
+                )
+            )
+            is_first = True
+            while True:
+                msg = self._query_result(ws, req_id)
+                df = self._rows_to_df(msg["result"])
+                if not (msg.get("metadata") or {}).get("hasMore"):
+                    break
+                yield df
+                is_first = False
+                ws.send(json.dumps({"_type": "fetch", "id": req_id}))
+        if is_first or not df.empty:
+            yield df
 
-            while msg := ws.recv():
-                msg = json.loads(msg)
-                if self._maybe_reauth(msg):
-                    continue
-                if msg.get("id") != req_id:
-                    continue
-                elif msg["_type"] == "query_finished" and msg.get("error"):
-                    raise RuntimeError(f"Error while executing: {msg['error']}")
-                elif msg["_type"] == "query_finished" and msg.get("result"):
-                    return self._rows_to_df(msg["result"])
+    def _query_result(self, ws: "WebSocket", req_id: str) -> dict:
+        while msg := ws.recv():
+            msg = json.loads(msg)
+            if self._maybe_reauth(msg):
+                continue
+            if msg.get("id") != req_id:
+                continue
+            elif msg["_type"] == "query_finished" and msg.get("error"):
+                raise RuntimeError(f"Error while executing: {msg['error']}")
+            elif msg["_type"] == "query_finished" and msg.get("result"):
+                return msg
+        raise RuntimeError(f"Connection to {self._config.ws_addr} closed before the result")
 
     def run_notebook(
         self,
@@ -441,3 +474,48 @@ class Client:
             """)
         finally:
             self.delete_file(file)
+
+
+# A thread's last result; its next query closes it unless its batches are being read.
+_thread = threading.local()
+
+
+class SqlResult(pd.DataFrame):
+    """
+    The first batch of a query's rows. ``batches()`` yields it and then the rest of the
+    rows a batch at a time from the same query, so a result too big to hold in memory
+    can still be read whole. The query's socket stays open until the rows run out, the
+    result is closed or garbage collected, or the next query on the same thread starts
+    before its batches are read; the server closes its cursor after a minute without a
+    fetch.
+    """
+
+    _rest: Generator[pd.DataFrame] | None = None
+    _closed = False
+
+    def __init__(self, first: pd.DataFrame, rest: Generator[pd.DataFrame]):
+        super().__init__(first)
+        self._rest = rest
+
+    @property
+    def _constructor(self):
+        return pd.DataFrame
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        self._closed = True
+        if self._rest is not None:
+            self._rest.close()
+
+    def batches(self) -> Iterator[pd.DataFrame]:
+        rest = self._rest
+        if self._closed or rest is None:
+            raise RuntimeError("result set is already closed")
+        self._closed = True
+        yield pd.DataFrame(self)
+        yield from rest

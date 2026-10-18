@@ -95,9 +95,9 @@ def delete_file(
     _c.delete_file(file)
 
 
-def sql(sql: str, *, client: Client | None = None):
+def sql(sql: str, batch_rows: int = 100_000, *, client: Client | None = None):
     _c = _client_or_raise(client)
-    return _c.sql(sql)
+    return _c.sql(sql, batch_rows)
 
 
 def run_notebook(
